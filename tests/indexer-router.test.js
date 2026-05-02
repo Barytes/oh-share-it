@@ -78,3 +78,73 @@ test("reindexLibrary writes share-level and library-level indexes", () => {
   assert.equal(libraryL2.entries.length, 3);
   assert.equal(libraryL2.entries.some(entry => entry.type === "skill"), true);
 });
+
+test("writeShare preserves existing share and library index when replacement has invalid path", () => {
+  const root = makeTempDir();
+  const store = createStore({ dataDir: path.join(root, "data") });
+  const owner = store.createLibrary({ name: "acme-product", owner: "alice" });
+  writeShare({ store, libraryName: "acme-product", actorToken: owner.token, sharePackage: samplePackage() });
+
+  const libraryDir = path.join(root, "data", "libraries", "acme-product");
+  const shareDir = path.join(libraryDir, "shares", "alice-api-notes");
+  const manifestPath = path.join(shareDir, "manifest.json");
+  const oldManifest = fs.readFileSync(manifestPath, "utf8");
+  const invalidReplacement = {
+    ...samplePackage(),
+    files: [
+      {
+        path: "../escape.md",
+        hash: "bad",
+        size: 3,
+        contentBase64: Buffer.from("bad").toString("base64")
+      }
+    ]
+  };
+
+  assert.throws(
+    () => writeShare({
+      store,
+      libraryName: "acme-product",
+      actorToken: owner.token,
+      sharePackage: invalidReplacement
+    }),
+    /Invalid share file path/
+  );
+
+  assert.equal(fs.existsSync(path.join(shareDir, "raw", "README.md")), true);
+  assert.equal(fs.readFileSync(manifestPath, "utf8"), oldManifest);
+
+  const libraryL2 = JSON.parse(fs.readFileSync(path.join(libraryDir, "indexes", "L2.json"), "utf8"));
+  const readmeEntry = libraryL2.entries.find(entry => entry.sourcePath === "README.md");
+  assert.ok(readmeEntry);
+  assert.equal(fs.existsSync(path.join(libraryDir, readmeEntry.rawPath)), true);
+});
+
+test("writeShare rejects ambiguous share file paths", () => {
+  const root = makeTempDir();
+  const store = createStore({ dataDir: path.join(root, "data") });
+  const owner = store.createLibrary({ name: "acme-product", owner: "alice" });
+
+  for (const [index, filePath] of ["a/../b.md", "./b.md", "", "a//b.md", "a\\.\\b.md", "a\\..\\b.md"].entries()) {
+    assert.throws(
+      () => writeShare({
+        store,
+        libraryName: "acme-product",
+        actorToken: owner.token,
+        sharePackage: {
+          ...samplePackage(),
+          shareName: `invalid-${index}`,
+          files: [
+            {
+              path: filePath,
+              hash: "bad",
+              size: 3,
+              contentBase64: Buffer.from("bad").toString("base64")
+            }
+          ]
+        }
+      }),
+      /Invalid share file path/
+    );
+  }
+});

@@ -1,7 +1,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { classifyPath } = require("./classifier");
-const { ensureDir, normalizeRelativePath, safeJoin, writeJsonFile } = require("./fs-utils");
+const { ensureDir, replaceDirAtomic, safeJoin, writeJsonFile } = require("./fs-utils");
 
 const SHARE_NAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$/;
 
@@ -21,6 +21,28 @@ function assertShareName(shareName) {
   }
 }
 
+function validateShareFilePath(relativePath) {
+  if (typeof relativePath !== "string") {
+    throw new Error(`Invalid share file path: ${relativePath}`);
+  }
+
+  const normalized = relativePath.replaceAll("\\", "/");
+  if (
+    normalized === "" ||
+    path.posix.isAbsolute(normalized) ||
+    path.win32.isAbsolute(relativePath)
+  ) {
+    throw new Error(`Invalid share file path: ${relativePath}`);
+  }
+
+  const segments = normalized.split("/");
+  if (segments.some(segment => segment === "" || segment === "." || segment === "..")) {
+    throw new Error(`Invalid share file path: ${relativePath}`);
+  }
+
+  return normalized;
+}
+
 function writeFileSafe(root, relativePath, contents) {
   const target = safeJoin(root, relativePath);
   ensureDir(path.dirname(target));
@@ -30,50 +52,56 @@ function writeFileSafe(root, relativePath, contents) {
 function writeShare({ store, libraryName, actorToken, sharePackage }) {
   store.assertPermission(libraryName, actorToken, "upload");
   assertShareName(sharePackage.shareName);
+  const files = sharePackage.files.map(file => ({
+    file,
+    sourcePath: validateShareFilePath(file.path)
+  }));
 
   const libraryDir = store.libraryDir(libraryName);
   const sharesDir = path.join(libraryDir, "shares");
   const shareDir = safeJoin(sharesDir, sharePackage.shareName);
-  fs.rmSync(shareDir, { recursive: true, force: true });
-  ensureDir(shareDir);
+  const tempShareDir = safeJoin(sharesDir, `.tmp-${sharePackage.shareName}-${process.pid}`);
 
-  const entries = [];
-  for (const file of sharePackage.files) {
-    const sourcePath = normalizeRelativePath(file.path);
-    const decoded = Buffer.from(file.contentBase64, "base64");
+  let entries = [];
+  replaceDirAtomic(shareDir, tempShareDir, nextShareDir => {
+    entries = [];
+    for (const { file, sourcePath } of files) {
+      const decoded = Buffer.from(file.contentBase64, "base64");
 
-    writeFileSafe(path.join(shareDir, "raw"), sourcePath, decoded);
+      writeFileSafe(path.join(nextShareDir, "raw"), sourcePath, decoded);
 
-    const classification = classifyPath(sourcePath);
-    const classifiedDir = classifiedDirFor(classification.type);
-    writeFileSafe(path.join(shareDir, classifiedDir), sourcePath, decoded);
+      const classification = classifyPath(sourcePath);
+      const classifiedDir = classifiedDirFor(classification.type);
+      writeFileSafe(path.join(nextShareDir, classifiedDir), sourcePath, decoded);
 
-    entries.push({
-      uri: `oh://library/${libraryName}/shares/${sharePackage.shareName}/${classifiedDir}/${sourcePath}`,
+      entries.push({
+        uri: `oh://library/${libraryName}/shares/${sharePackage.shareName}/${classifiedDir}/${sourcePath}`,
+        shareName: sharePackage.shareName,
+        sourcePath,
+        rawPath: `shares/${sharePackage.shareName}/raw/${sourcePath}`,
+        classifiedPath: `shares/${sharePackage.shareName}/${classifiedDir}/${sourcePath}`,
+        type: classification.type,
+        tags: classification.tags,
+        hash: file.hash,
+        size: file.size,
+        updatedAt: sharePackage.createdAt,
+        preview: previewText(decoded.toString("utf8"))
+      });
+    }
+
+    writeJsonFile(path.join(nextShareDir, "manifest.json"), {
       shareName: sharePackage.shareName,
-      sourcePath,
-      rawPath: `shares/${sharePackage.shareName}/raw/${sourcePath}`,
-      classifiedPath: `shares/${sharePackage.shareName}/${classifiedDir}/${sourcePath}`,
-      type: classification.type,
-      tags: classification.tags,
-      hash: file.hash,
-      size: file.size,
-      updatedAt: sharePackage.createdAt,
-      preview: previewText(decoded.toString("utf8"))
+      member: sharePackage.member,
+      createdAt: sharePackage.createdAt,
+      entries
     });
-  }
+    writeIndexes({
+      baseDir: nextShareDir,
+      title: sharePackage.shareName,
+      entries
+    });
+  });
 
-  writeJsonFile(path.join(shareDir, "manifest.json"), {
-    shareName: sharePackage.shareName,
-    member: sharePackage.member,
-    createdAt: sharePackage.createdAt,
-    entries
-  });
-  writeIndexes({
-    baseDir: shareDir,
-    title: sharePackage.shareName,
-    entries
-  });
   writeLibraryIndexes({ libraryName, libraryDir });
   return { shareName: sharePackage.shareName, entries };
 }
@@ -110,6 +138,7 @@ function readShareEntries(libraryDir) {
 
   return fs.readdirSync(sharesDir, { withFileTypes: true })
     .filter(entry => entry.isDirectory())
+    .filter(entry => !entry.name.startsWith("."))
     .flatMap(entry => {
       const manifestPath = path.join(sharesDir, entry.name, "manifest.json");
       if (!fs.existsSync(manifestPath)) return [];
