@@ -3,6 +3,15 @@ const path = require("node:path");
 const { parseShareRules, isAllowedByShareRules } = require("./share-rules");
 const { sha256, walkFiles } = require("./fs-utils");
 
+function isPackageMetadataPath(relativePath) {
+  return (
+    relativePath === ".git" ||
+    relativePath === ".oh-share-it" ||
+    relativePath.startsWith(".git/") ||
+    relativePath.startsWith(".oh-share-it/")
+  );
+}
+
 function buildSharePackage({ root, shareName, member }) {
   const rulesPath = path.join(root, "share-it.rules");
   if (!fs.existsSync(rulesPath)) {
@@ -12,8 +21,7 @@ function buildSharePackage({ root, shareName, member }) {
   const rules = parseShareRules(fs.readFileSync(rulesPath, "utf8"));
   const files = walkFiles(root)
     .filter(relativePath => relativePath !== "share-it.rules")
-    .filter(relativePath => !relativePath.startsWith(".git/"))
-    .filter(relativePath => !relativePath.startsWith(".oh-share-it/"))
+    .filter(relativePath => !isPackageMetadataPath(relativePath))
     .filter(relativePath => isAllowedByShareRules(relativePath, rules))
     .map(relativePath => {
       const absolutePath = path.join(root, relativePath);
