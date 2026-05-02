@@ -1,2 +1,5 @@
 .DS_Store
 .worktrees
+data/libraries/
+.oh-share-it/
+tmp/
