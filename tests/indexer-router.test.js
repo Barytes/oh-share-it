@@ -179,3 +179,43 @@ test("writeShare rejects duplicate share file paths after normalization", () => 
     );
   }
 });
+
+const { routeQuery } = require("../server/lib/router");
+
+test("routeQuery returns document results from L2 entries", () => {
+  const root = makeTempDir();
+  const store = createStore({ dataDir: path.join(root, "data") });
+  const owner = store.createLibrary({ name: "acme-product", owner: "alice" });
+  writeShare({ store, libraryName: "acme-product", actorToken: owner.token, sharePackage: samplePackage() });
+  reindexLibrary({ store, libraryName: "acme-product", actorToken: owner.token });
+
+  const result = routeQuery({
+    store,
+    libraryName: "acme-product",
+    actorToken: owner.token,
+    query: "agent skill context",
+    mode: "documents"
+  });
+
+  assert.equal(result.mode, "documents");
+  assert.equal(result.results[0].type, "skill");
+  assert.match(result.results[0].why, /Matched/);
+});
+
+test("routeQuery supports chunk mode", () => {
+  const root = makeTempDir();
+  const store = createStore({ dataDir: path.join(root, "data") });
+  const owner = store.createLibrary({ name: "acme-product", owner: "alice" });
+  writeShare({ store, libraryName: "acme-product", actorToken: owner.token, sharePackage: samplePackage() });
+  reindexLibrary({ store, libraryName: "acme-product", actorToken: owner.token });
+
+  const result = routeQuery({
+    store,
+    libraryName: "acme-product",
+    actorToken: owner.token,
+    query: "handoff background",
+    mode: "chunks"
+  });
+
+  assert.equal(result.results[0].chunk.includes("handoff"), true);
+});
