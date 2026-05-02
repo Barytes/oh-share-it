@@ -76,6 +76,9 @@ function createStore({ dataDir }) {
   function createLibrary({ name, owner }) {
     validateLibraryName(name);
     const dir = libraryDir(name);
+    if (fs.existsSync(dir)) {
+      throw new Error(`Library already exists: ${name}`);
+    }
     ensureDir(path.join(dir, "shares"));
     ensureDir(path.join(dir, "indexes"));
     writeJsonFile(path.join(dir, "library.json"), {

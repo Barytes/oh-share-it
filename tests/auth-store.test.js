@@ -133,3 +133,15 @@ test("invalid library names throw", () => {
 
   assert.equal(store.createLibrary({ name: "acme-product", owner: "alice" }).library, "acme-product");
 });
+
+test("duplicate library creation is rejected without replacing owner", () => {
+  const root = makeTempDir();
+  const store = createStore({ dataDir: path.join(root, "data") });
+  const ownerCredential = store.createLibrary({ name: "acme-product", owner: "alice" });
+
+  assert.throws(
+    () => store.createLibrary({ name: "acme-product", owner: "mallory" }),
+    /Library already exists/
+  );
+  assert.equal(store.getMemberRole("acme-product", ownerCredential.token), "owner");
+});
