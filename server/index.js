@@ -6,7 +6,15 @@ const { createStore } = require("./lib/library-store");
 const { reindexLibrary, writeShare } = require("./lib/indexer");
 const { routeQuery } = require("./lib/router");
 const { readJsonRequest, sendError, sendJson, serveStatic, staticContentType } = require("./lib/http-utils");
-const { safeJoin, walkFiles } = require("./lib/fs-utils");
+const { normalizeRelativePath, readJsonFile, safeJoin, walkFiles } = require("./lib/fs-utils");
+
+const SENSITIVE_LIBRARY_PATH_ROOTS = new Set([
+  "members.json",
+  "invites.json",
+  "audit.log",
+  ".internal",
+  "secrets"
+]);
 
 class HttpError extends Error {
   constructor(statusCode, message) {
@@ -47,11 +55,22 @@ function listLibraries({ dataDir, store, token }) {
     });
 }
 
+function isSensitiveLibraryPath(relativePath) {
+  const normalized = normalizeRelativePath(relativePath);
+  return Array.from(SENSITIVE_LIBRARY_PATH_ROOTS).some(root => (
+    normalized === root || normalized.startsWith(`${root}/`)
+  ));
+}
+
+function isSyncableLibraryPath(relativePath) {
+  return !isSensitiveLibraryPath(relativePath);
+}
+
 function snapshotLibrary(store, libraryName, token) {
   store.assertPermission(libraryName, token, "sync");
   const libraryDir = store.libraryDir(libraryName);
   const files = walkFiles(libraryDir)
-    .filter(relativePath => !["members.json", "invites.json", "audit.log"].includes(relativePath))
+    .filter(isSyncableLibraryPath)
     .sort()
     .map(relativePath => ({
       path: relativePath,
@@ -72,6 +91,19 @@ function listShares(store, libraryName, token) {
   return { shares };
 }
 
+function listMembers(store, libraryName, token) {
+  store.assertPermission(libraryName, token, "members");
+  const membersPath = path.join(store.libraryDir(libraryName), "members.json");
+  const state = readJsonFile(membersPath, { members: [] });
+  return {
+    members: state.members.map(member => ({
+      member: member.member,
+      role: member.role,
+      library: member.library
+    }))
+  };
+}
+
 function readShareManifest(store, libraryName, shareName, token) {
   store.assertPermission(libraryName, token, "read");
   const sharesDir = path.join(store.libraryDir(libraryName), "shares");
@@ -85,6 +117,9 @@ function readShareManifest(store, libraryName, shareName, token) {
 function readLibraryFile(store, libraryName, requestedPath, token) {
   store.assertPermission(libraryName, token, "read");
   if (!requestedPath) throw new Error("Missing file path");
+  if (!isSyncableLibraryPath(requestedPath)) {
+    throw new HttpError(403, "File is not readable");
+  }
 
   const filePath = safeJoin(store.libraryDir(libraryName), requestedPath);
   if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
@@ -113,6 +148,10 @@ function handleLibraryRoute({ request, response, store, url, token, libraryName,
     const role = store.getMemberRole(libraryName, token);
     if (!role) throw new Error("Permission denied for read");
     return sendJson(response, 200, { name: libraryName, role });
+  }
+
+  if (request.method === "GET" && rest === "members") {
+    return sendJson(response, 200, listMembers(store, libraryName, token));
   }
 
   if (request.method === "DELETE" && rest.startsWith("members/")) {
@@ -246,4 +285,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { createServer };
+module.exports = { createServer, isSensitiveLibraryPath, isSyncableLibraryPath };
