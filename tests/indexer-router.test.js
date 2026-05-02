@@ -219,3 +219,144 @@ test("routeQuery supports chunk mode", () => {
 
   assert.equal(result.results[0].chunk.includes("handoff"), true);
 });
+
+test("routeQuery returns empty document results when L2 is missing", () => {
+  const root = makeTempDir();
+  const store = createStore({ dataDir: path.join(root, "data") });
+  const owner = store.createLibrary({ name: "acme-product", owner: "alice" });
+
+  const result = routeQuery({
+    store,
+    libraryName: "acme-product",
+    actorToken: owner.token,
+    query: "agent skill context"
+  });
+
+  assert.deepEqual(result, {
+    query: "agent skill context",
+    mode: "documents",
+    results: []
+  });
+});
+
+test("routeQuery rejects unsupported modes", () => {
+  const root = makeTempDir();
+  const store = createStore({ dataDir: path.join(root, "data") });
+  const owner = store.createLibrary({ name: "acme-product", owner: "alice" });
+  writeShare({ store, libraryName: "acme-product", actorToken: owner.token, sharePackage: samplePackage() });
+  reindexLibrary({ store, libraryName: "acme-product", actorToken: owner.token });
+
+  assert.throws(
+    () => routeQuery({
+      store,
+      libraryName: "acme-product",
+      actorToken: owner.token,
+      query: "agent skill context",
+      mode: "bad"
+    }),
+    /Unsupported route mode/
+  );
+});
+
+test("routeQuery returns directories without chunks in directory mode", () => {
+  const root = makeTempDir();
+  const store = createStore({ dataDir: path.join(root, "data") });
+  const owner = store.createLibrary({ name: "acme-product", owner: "alice" });
+  writeShare({ store, libraryName: "acme-product", actorToken: owner.token, sharePackage: samplePackage() });
+  reindexLibrary({ store, libraryName: "acme-product", actorToken: owner.token });
+
+  const result = routeQuery({
+    store,
+    libraryName: "acme-product",
+    actorToken: owner.token,
+    query: "handoff background",
+    mode: "directories"
+  });
+
+  assert.equal(result.results[0].directory, "shares/alice-api-notes/memories/notes");
+  assert.equal(Object.hasOwn(result.results[0], "chunk"), false);
+});
+
+test("routeQuery filters results by shareName", () => {
+  const root = makeTempDir();
+  const store = createStore({ dataDir: path.join(root, "data") });
+  const owner = store.createLibrary({ name: "acme-product", owner: "alice" });
+  writeShare({ store, libraryName: "acme-product", actorToken: owner.token, sharePackage: samplePackage() });
+  writeShare({
+    store,
+    libraryName: "acme-product",
+    actorToken: owner.token,
+    sharePackage: {
+      ...samplePackage(),
+      shareName: "bob-api-notes",
+      member: "bob"
+    }
+  });
+  reindexLibrary({ store, libraryName: "acme-product", actorToken: owner.token });
+
+  const result = routeQuery({
+    store,
+    libraryName: "acme-product",
+    actorToken: owner.token,
+    query: "skill context",
+    shareName: "bob-api-notes"
+  });
+
+  assert.equal(result.results.length > 0, true);
+  assert.equal(result.results.every(entry => entry.uri.includes("/shares/bob-api-notes/")), true);
+});
+
+test("routeQuery sorts equal-score results by URI", () => {
+  const root = makeTempDir();
+  const store = createStore({ dataDir: path.join(root, "data") });
+  const owner = store.createLibrary({ name: "acme-product", owner: "alice" });
+  for (const shareName of ["zeta-api-notes", "alpha-api-notes"]) {
+    writeShare({
+      store,
+      libraryName: "acme-product",
+      actorToken: owner.token,
+      sharePackage: {
+        ...samplePackage(),
+        shareName
+      }
+    });
+  }
+  reindexLibrary({ store, libraryName: "acme-product", actorToken: owner.token });
+
+  const l2Path = path.join(root, "data", "libraries", "acme-product", "indexes", "L2.json");
+  const l2 = JSON.parse(fs.readFileSync(l2Path, "utf8"));
+  l2.entries.sort((left, right) => right.uri.localeCompare(left.uri));
+  fs.writeFileSync(l2Path, JSON.stringify(l2, null, 2));
+
+  const result = routeQuery({
+    store,
+    libraryName: "acme-product",
+    actorToken: owner.token,
+    query: "project"
+  });
+
+  assert.deepEqual(
+    result.results.map(entry => entry.uri),
+    [
+      "oh://library/acme-product/shares/alpha-api-notes/resources/README.md",
+      "oh://library/acme-product/shares/zeta-api-notes/resources/README.md"
+    ]
+  );
+});
+
+test("routeQuery returns no results when query has no tokens", () => {
+  const root = makeTempDir();
+  const store = createStore({ dataDir: path.join(root, "data") });
+  const owner = store.createLibrary({ name: "acme-product", owner: "alice" });
+  writeShare({ store, libraryName: "acme-product", actorToken: owner.token, sharePackage: samplePackage() });
+  reindexLibrary({ store, libraryName: "acme-product", actorToken: owner.token });
+
+  const result = routeQuery({
+    store,
+    libraryName: "acme-product",
+    actorToken: owner.token,
+    query: " ..."
+  });
+
+  assert.deepEqual(result.results, []);
+});
