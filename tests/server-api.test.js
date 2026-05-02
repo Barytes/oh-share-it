@@ -409,3 +409,33 @@ test("reader cannot list library members", async () => {
     assert.equal(typeof json.error, "string");
   });
 });
+
+test("server rejects oversized JSON request bodies", async () => {
+  await withServer(async baseUrl => {
+    const oversizedName = "a".repeat(1024 * 1024);
+    const { response, json } = await requestJson(`${baseUrl}/api/libraries`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: oversizedName, owner: "alice" })
+    });
+
+    assert.equal(response.status, 413);
+    assert.deepEqual(json, { error: "Payload too large" });
+  });
+});
+
+test("server does not expose raw parser or decoder error messages", async () => {
+  await withServer(async baseUrl => {
+    const malformedJson = await requestJson(`${baseUrl}/api/libraries`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{\"name\":"
+    });
+    assert.equal(malformedJson.response.status, 400);
+    assert.deepEqual(malformedJson.json, { error: "Bad request" });
+
+    const malformedPath = await requestJson(`${baseUrl}/api/libraries/%E0%A4%A`);
+    assert.equal(malformedPath.response.status, 400);
+    assert.deepEqual(malformedPath.json, { error: "Bad request" });
+  });
+});
