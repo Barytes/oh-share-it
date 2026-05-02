@@ -58,10 +58,11 @@ function writeShare({ store, libraryName, actorToken, sharePackage }) {
   }));
   const sourcePaths = new Set();
   for (const { sourcePath } of files) {
-    if (sourcePaths.has(sourcePath)) {
+    const duplicateKey = sourcePath.toLowerCase();
+    if (sourcePaths.has(duplicateKey)) {
       throw new Error(`Duplicate share file path: ${sourcePath}`);
     }
-    sourcePaths.add(sourcePath);
+    sourcePaths.add(duplicateKey);
   }
 
   const libraryDir = store.libraryDir(libraryName);

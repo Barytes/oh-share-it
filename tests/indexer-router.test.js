@@ -156,7 +156,8 @@ test("writeShare rejects duplicate share file paths after normalization", () => 
 
   for (const [index, paths] of [
     ["docs/a.md", "docs\\a.md"],
-    ["docs/a.md", "docs/a.md"]
+    ["docs/a.md", "docs/a.md"],
+    ["docs/A.md", "docs/a.md"]
   ].entries()) {
     assert.throws(
       () => writeShare({
