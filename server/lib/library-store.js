@@ -141,6 +141,10 @@ function createStore({ dataDir }) {
   function removeMember({ libraryName, actorToken, member }) {
     const actor = assertPermission(libraryName, actorToken, "members");
     const state = readMembers(libraryName);
+    const target = state.members.find(existing => existing.member === member);
+    if (target && target.role === "owner") {
+      throw new Error("Cannot remove library owner");
+    }
     state.members = state.members.filter(existing => existing.member !== member);
     writeMembers(libraryName, state);
     audit(libraryName, { type: "member.removed", actor: actor.member, member });

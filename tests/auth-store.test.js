@@ -145,3 +145,41 @@ test("duplicate library creation is rejected without replacing owner", () => {
   );
   assert.equal(store.getMemberRole("acme-product", ownerCredential.token), "owner");
 });
+
+test("admin cannot remove the library owner", () => {
+  const root = makeTempDir();
+  const store = createStore({ dataDir: path.join(root, "data") });
+  const ownerCredential = store.createLibrary({ name: "acme-product", owner: "alice" });
+  const adminInvite = store.createInvite({
+    libraryName: "acme-product",
+    actorToken: ownerCredential.token,
+    role: "admin"
+  });
+  const adminCredential = store.joinInvite({ token: adminInvite.token, member: "bob" });
+
+  assert.throws(
+    () => store.removeMember({
+      libraryName: "acme-product",
+      actorToken: adminCredential.token,
+      member: "alice"
+    }),
+    /Cannot remove library owner/
+  );
+  assert.equal(store.getMemberRole("acme-product", ownerCredential.token), "owner");
+});
+
+test("owner cannot remove self through removeMember", () => {
+  const root = makeTempDir();
+  const store = createStore({ dataDir: path.join(root, "data") });
+  const ownerCredential = store.createLibrary({ name: "acme-product", owner: "alice" });
+
+  assert.throws(
+    () => store.removeMember({
+      libraryName: "acme-product",
+      actorToken: ownerCredential.token,
+      member: "alice"
+    }),
+    /Cannot remove library owner/
+  );
+  assert.equal(store.getMemberRole("acme-product", ownerCredential.token), "owner");
+});
