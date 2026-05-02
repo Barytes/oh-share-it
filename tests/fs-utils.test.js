@@ -50,6 +50,46 @@ test("replaceDirAtomic replaces a directory after complete write", () => {
   assert.equal(fs.readFileSync(path.join(target, "new.txt"), "utf8"), "new");
 });
 
+test("replaceDirAtomic rejects tempDir inside targetDir and preserves target contents", () => {
+  const root = makeTempDir();
+  const target = path.join(root, "public");
+  ensureDir(target);
+  writeFile(target, "old.txt", "old");
+
+  let error;
+  try {
+    replaceDirAtomic(target, path.join(target, ".tmp"), next => {
+      writeFile(next, "new.txt", "new");
+    });
+  } catch (caught) {
+    error = caught;
+  }
+
+  assert.ok(error);
+  assert.equal(fs.existsSync(path.join(target, "old.txt")), true);
+  assert.equal(fs.readFileSync(path.join(target, "old.txt"), "utf8"), "old");
+  assert.match(error.message, /inside target/);
+  assert.equal(fs.existsSync(path.join(target, "new.txt")), false);
+});
+
+test("replaceDirAtomic preserves target and cleans tempDir when writer throws", () => {
+  const root = makeTempDir();
+  const target = path.join(root, "public");
+  const temp = path.join(root, "next");
+  ensureDir(target);
+  writeFile(target, "old.txt", "old");
+
+  assert.throws(() => {
+    replaceDirAtomic(target, temp, next => {
+      writeFile(next, "new.txt", "new");
+      throw new Error("write failed");
+    });
+  }, /write failed/);
+
+  assert.equal(fs.readFileSync(path.join(target, "old.txt"), "utf8"), "old");
+  assert.equal(fs.existsSync(path.join(temp, "new.txt")), false);
+});
+
 test("sha256 returns stable hashes", () => {
   assert.equal(sha256("hello"), "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824");
 });

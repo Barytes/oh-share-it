@@ -51,12 +51,57 @@ function removeDir(dirPath) {
   fs.rmSync(dirPath, { recursive: true, force: true });
 }
 
+function isInside(parentDir, childDir) {
+  const relative = path.relative(path.resolve(parentDir), path.resolve(childDir));
+  return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
+}
+
+function makeBackupDir(targetDir) {
+  const parent = path.dirname(targetDir);
+  const name = path.basename(targetDir);
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const suffix = crypto.randomBytes(6).toString("hex");
+    const backupDir = path.join(parent, `${name}.backup-${process.pid}-${suffix}`);
+    if (!fs.existsSync(backupDir)) return backupDir;
+  }
+  throw new Error(`Unable to create backup path for ${targetDir}`);
+}
+
 function replaceDirAtomic(targetDir, tempDir, writer) {
+  const resolvedTarget = path.resolve(targetDir);
+  const resolvedTemp = path.resolve(tempDir);
+  if (resolvedTarget === resolvedTemp || isInside(resolvedTarget, resolvedTemp)) {
+    throw new Error(`tempDir must not be inside targetDir: ${tempDir}`);
+  }
+  if (isInside(resolvedTemp, resolvedTarget)) {
+    throw new Error(`targetDir must not be inside tempDir: ${targetDir}`);
+  }
+
   removeDir(tempDir);
   ensureDir(tempDir);
-  writer(tempDir);
-  removeDir(targetDir);
-  fs.renameSync(tempDir, targetDir);
+  try {
+    writer(tempDir);
+  } catch (error) {
+    removeDir(tempDir);
+    throw error;
+  }
+
+  if (!fs.existsSync(targetDir)) {
+    fs.renameSync(tempDir, targetDir);
+    return;
+  }
+
+  const backupDir = makeBackupDir(targetDir);
+  fs.renameSync(targetDir, backupDir);
+  try {
+    fs.renameSync(tempDir, targetDir);
+  } catch (error) {
+    if (!fs.existsSync(targetDir) && fs.existsSync(backupDir)) {
+      fs.renameSync(backupDir, targetDir);
+    }
+    throw error;
+  }
+  removeDir(backupDir);
 }
 
 module.exports = {
