@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Oh Share It</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <aside class="library-rail" aria-label="Libraries">
+        <header class="rail-header">
+          <h1>Oh Share It</h1>
+          <button id="refresh" type="button">Refresh</button>
+        </header>
+        <label class="field">
+          <span>Bearer token</span>
+          <input id="token" type="password" autocomplete="off" spellcheck="false" placeholder="osi_member_...">
+        </label>
+        <div id="status" class="status" role="status">Enter a token to list libraries.</div>
+        <nav id="libraries" class="library-list" aria-label="Authorized libraries"></nav>
+      </aside>
+
+      <section class="workspace" aria-label="Library browser">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Selected library</p>
+            <h2 id="selected-title">No library selected</h2>
+          </div>
+          <form id="route-form" class="route-form">
+            <label class="field compact">
+              <span>Route query</span>
+              <input id="query" type="search" placeholder="Find relevant context">
+            </label>
+            <select id="route-mode" aria-label="Route mode">
+              <option value="documents">Documents</option>
+              <option value="directories">Directories</option>
+              <option value="chunks">Chunks</option>
+            </select>
+            <button id="route" type="submit">Route</button>
+          </form>
+        </header>
+
+        <section class="summary-band" aria-label="Library summary">
+          <div id="library-meta" class="meta-grid"></div>
+          <div class="action-row">
+            <button id="sync" type="button" disabled>Read Sync Snapshot</button>
+            <button id="members" type="button" disabled>Members</button>
+            <button id="reindex" type="button" disabled>Reindex</button>
+          </div>
+        </section>
+
+        <section class="browser-grid">
+          <section class="pane" aria-label="Indexes">
+            <header class="pane-title">
+              <h3>Indexes</h3>
+            </header>
+            <div id="indexes" class="button-list"></div>
+          </section>
+
+          <section class="pane" aria-label="Shares">
+            <header class="pane-title">
+              <h3>Shares</h3>
+            </header>
+            <div id="shares" class="share-list"></div>
+          </section>
+
+          <section class="pane detail-pane" aria-label="Selected content">
+            <header class="pane-title">
+              <h3 id="detail-heading">Detail</h3>
+            </header>
+            <div id="detail" class="detail-output">Select a library to begin.</div>
+          </section>
+        </section>
+      </section>
+    </main>
+    <script src="/app.js"></script>
+  </body>
+</html>
