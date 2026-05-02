@@ -3,11 +3,27 @@ const path = require("node:path");
 const { can, createToken } = require("./auth");
 const { ensureDir, readJsonFile, safeJoin, writeJsonFile } = require("./fs-utils");
 
+const LIBRARY_NAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$/;
+const INVITE_ROLES = new Set(["admin", "contributor", "reader"]);
+
+function validateLibraryName(name) {
+  if (typeof name !== "string" || !LIBRARY_NAME_PATTERN.test(name)) {
+    throw new Error(`Invalid library name: ${name}`);
+  }
+}
+
+function validateInviteRole(role) {
+  if (!INVITE_ROLES.has(role)) {
+    throw new Error(`Invalid invite role: ${role}`);
+  }
+}
+
 function createStore({ dataDir }) {
   const librariesDir = path.join(dataDir, "libraries");
   ensureDir(librariesDir);
 
   function libraryDir(name) {
+    validateLibraryName(name);
     return safeJoin(librariesDir, name);
   }
 
@@ -58,6 +74,7 @@ function createStore({ dataDir }) {
   }
 
   function createLibrary({ name, owner }) {
+    validateLibraryName(name);
     const dir = libraryDir(name);
     ensureDir(path.join(dir, "shares"));
     ensureDir(path.join(dir, "indexes"));
@@ -74,6 +91,7 @@ function createStore({ dataDir }) {
   }
 
   function createInvite({ libraryName, actorToken, role }) {
+    validateInviteRole(role);
     const actor = assertPermission(libraryName, actorToken, "invite");
     const state = readInvites(libraryName);
     const invite = {
@@ -96,6 +114,10 @@ function createStore({ dataDir }) {
       const state = readInvites(entry.name);
       const invite = state.invites.find(candidate => candidate.token === token);
       if (invite && !invite.revoked) {
+        invite.revoked = true;
+        invite.consumedBy = member;
+        invite.consumedAt = new Date().toISOString();
+        writeInvites(invite.library, state);
         const credential = {
           library: invite.library,
           member,
