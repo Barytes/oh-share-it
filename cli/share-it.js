@@ -36,6 +36,13 @@ function bindingPath(cwd = process.cwd()) {
   return path.join(cwd, ".oh-share-it", "binding.json");
 }
 
+function writePrivateJsonFile(filePath, value) {
+  ensureDir(path.dirname(filePath));
+  fs.chmodSync(path.dirname(filePath), 0o700);
+  fs.writeFileSync(filePath, JSON.stringify(value, null, 2) + "\n", { mode: 0o600 });
+  fs.chmodSync(filePath, 0o600);
+}
+
 function readCredentials() {
   const state = readJsonFile(credentialPath(), { credentials: [] });
   return { credentials: Array.isArray(state.credentials) ? state.credentials : [] };
@@ -49,7 +56,7 @@ function saveCredential(credential) {
     existing.member === credential.member
   ));
   state.credentials.push(credential);
-  writeJsonFile(credentialPath(), state);
+  writePrivateJsonFile(credentialPath(), state);
 }
 
 function readBinding() {
@@ -122,10 +129,31 @@ function writeBinding({ server, library, member = "" }) {
     server,
     library,
     member,
-    syncPath: `.oh-share-it/public/${library}`
+    syncPath: syncPathForLibrary(library)
   };
   writeJsonFile(bindingPath(), binding);
   return binding;
+}
+
+function validateLibraryName(name) {
+  if (typeof name !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$/.test(name)) {
+    throw new Error(`Invalid library name: ${name}`);
+  }
+}
+
+function syncPathForLibrary(library) {
+  validateLibraryName(library);
+  return `.oh-share-it/public/${library}`;
+}
+
+function syncRootForBinding(binding) {
+  validateLibraryName(binding.library);
+  const publicRoot = path.resolve(process.cwd(), ".oh-share-it", "public");
+  const target = path.resolve(publicRoot, binding.library);
+  if (target !== publicRoot && !target.startsWith(publicRoot + path.sep)) {
+    throw new Error(`Sync target escapes public root: ${binding.library}`);
+  }
+  return target;
 }
 
 function resolveLibraryContext(args) {
@@ -240,7 +268,8 @@ async function syncLibrary() {
   const snapshot = await requestJson(`${binding.server}/api/libraries/${binding.library}/sync`, {
     token: credential.token
   });
-  const target = path.join(process.cwd(), binding.syncPath);
+  const displayPath = syncPathForLibrary(binding.library);
+  const target = syncRootForBinding(binding);
   replaceDirAtomic(target, `${target}.tmp`, tempDir => {
     for (const file of snapshot.files) {
       const out = safeJoin(tempDir, file.path);
@@ -248,7 +277,7 @@ async function syncLibrary() {
       fs.writeFileSync(out, Buffer.from(file.contentBase64, "base64"));
     }
   });
-  console.log(JSON.stringify({ synced: snapshot.files.length, library: binding.library, path: binding.syncPath }));
+  console.log(JSON.stringify({ synced: snapshot.files.length, library: binding.library, path: displayPath }));
 }
 
 async function listShares() {
@@ -263,7 +292,7 @@ async function listShares() {
 function readSyncedFile(args) {
   const binding = readBinding();
   const requested = requireValue(args.join(" ").trim(), "Missing path");
-  const syncRoot = path.join(process.cwd(), binding.syncPath);
+  const syncRoot = syncRootForBinding(binding);
   const target = safeJoin(syncRoot, resolveReadPath(requested));
   console.log(fs.readFileSync(target, "utf8"));
 }

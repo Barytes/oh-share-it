@@ -139,3 +139,48 @@ test("CLI can create invites, join as another member, discover libraries, and re
     assert.match(readme, /Reader Visible Context/);
   });
 });
+
+test("sync derives target from library when binding syncPath is tampered", async () => {
+  await withServer(async (baseUrl, root) => {
+    const workdir = path.join(root, "work");
+    const home = path.join(root, "home");
+    const victimDir = path.join(root, "victim");
+
+    writeFile(workdir, "share-it.rules", "+ README.md\n");
+    writeFile(workdir, "README.md", "# Safely Synced\n");
+    writeFile(victimDir, "sentinel.txt", "do not replace\n");
+
+    await runCli(["library", "create", "safe-library", "--server", baseUrl, "--member", "alice"], workdir, { HOME: home });
+    runCliSync(["bind", "--server", baseUrl, "--library", "safe-library"], workdir, { HOME: home });
+    await runCli(["share", "--name", "safe-notes"], workdir, { HOME: home });
+
+    const bindingFile = path.join(workdir, ".oh-share-it", "binding.json");
+    const binding = readJson(bindingFile);
+    binding.syncPath = "../victim";
+    fs.writeFileSync(bindingFile, JSON.stringify(binding, null, 2) + "\n");
+
+    const synced = JSON.parse(await runCli(["sync"], workdir, { HOME: home }));
+
+    assert.equal(synced.path, ".oh-share-it/public/safe-library");
+    assert.equal(fs.readFileSync(path.join(victimDir, "sentinel.txt"), "utf8"), "do not replace\n");
+    assert.equal(
+      fs.existsSync(path.join(workdir, ".oh-share-it", "public", "safe-library", "shares", "safe-notes", "raw", "README.md")),
+      true
+    );
+  });
+});
+
+test("CLI stores credentials with private POSIX permissions", { skip: process.platform === "win32" }, async () => {
+  await withServer(async (baseUrl, root) => {
+    const workdir = path.join(root, "work");
+    const home = path.join(root, "home");
+
+    fs.mkdirSync(workdir, { recursive: true });
+    await runCli(["library", "create", "private-creds", "--server", baseUrl, "--member", "alice"], workdir, { HOME: home });
+
+    const credentialDir = path.join(home, ".oh-share-it");
+    const credentialFile = path.join(credentialDir, "credentials.json");
+    assert.equal(fs.statSync(credentialDir).mode & 0o777, 0o700);
+    assert.equal(fs.statSync(credentialFile).mode & 0o777, 0o600);
+  });
+});
