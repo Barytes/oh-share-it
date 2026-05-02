@@ -410,6 +410,36 @@ test("reader cannot list library members", async () => {
   });
 });
 
+test("owners can list invites and readers cannot", async () => {
+  await withServer(async baseUrl => {
+    const created = await createLibrary(baseUrl);
+    const invite = await requestJson(`${baseUrl}/api/libraries/acme-product/invites`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${created.token}`
+      },
+      body: JSON.stringify({ role: "contributor" })
+    });
+    const reader = await createReader(baseUrl, created.token);
+
+    const listed = await requestJson(`${baseUrl}/api/libraries/acme-product/invites`, {
+      headers: { authorization: `Bearer ${created.token}` }
+    });
+
+    assert.equal(listed.response.status, 200);
+    assert.equal(listed.json.invites.some(item => item.token === invite.json.token), true);
+    assert.equal(listed.json.invites.some(item => item.role === "contributor"), true);
+    assert.equal(listed.json.invites.every(item => item.library === "acme-product"), true);
+
+    const rejected = await requestJson(`${baseUrl}/api/libraries/acme-product/invites`, {
+      headers: { authorization: `Bearer ${reader.token}` }
+    });
+    assert.equal(rejected.response.status, 403);
+    assert.equal(typeof rejected.json.error, "string");
+  });
+});
+
 test("server rejects oversized JSON request bodies", async () => {
   await withServer(async baseUrl => {
     const oversizedName = "a".repeat(1024 * 1024);

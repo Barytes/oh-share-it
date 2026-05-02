@@ -111,6 +111,23 @@ function createStore({ dataDir }) {
     return invite;
   }
 
+  function listInvites({ libraryName, actorToken }) {
+    assertPermission(libraryName, actorToken, "invite");
+    const state = readInvites(libraryName);
+    return {
+      invites: state.invites.map(invite => ({
+        token: invite.token,
+        library: invite.library,
+        role: invite.role,
+        createdBy: invite.createdBy,
+        createdAt: invite.createdAt,
+        revoked: Boolean(invite.revoked),
+        consumedBy: invite.consumedBy,
+        consumedAt: invite.consumedAt
+      }))
+    };
+  }
+
   function joinInvite({ token, member }) {
     const libraries = fs.readdirSync(librariesDir, { withFileTypes: true }).filter(entry => entry.isDirectory());
     for (const entry of libraries) {
@@ -157,6 +174,7 @@ function createStore({ dataDir }) {
     getMemberRole,
     joinInvite,
     libraryDir,
+    listInvites,
     removeMember
   };
 }

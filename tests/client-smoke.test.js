@@ -9,6 +9,8 @@ test("client shell references app assets and library UI", () => {
   assert.match(html, /app.js/);
   assert.match(html, /styles.css/);
   assert.match(html, /Bearer token/);
+  assert.match(html, /invite-role/);
+  assert.match(html, /invite-create/);
   assert.match(html, /libraries/i);
 });
 
@@ -21,6 +23,7 @@ test("client app calls library browser endpoints", () => {
     "/sync",
     "/file",
     "/members",
+    "/invites",
     "/reindex"
   ]) {
     assert.match(app, new RegExp(endpoint.replaceAll("/", "\\/")));
@@ -32,5 +35,7 @@ test("client app exposes escaping helpers and avoids raw innerHTML rendering", (
 
   assert.match(app, /function escapeHtml/);
   assert.match(app, /function setSafeHtml/);
+  assert.match(app, /data-share-indexes/);
   assert.doesNotMatch(app, /\.innerHTML\s*=/);
+  assert.doesNotMatch(app, /\.outerHTML/);
 });

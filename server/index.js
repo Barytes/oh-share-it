@@ -186,6 +186,10 @@ function listMembers(store, libraryName, token) {
   };
 }
 
+function listInvites(store, libraryName, token) {
+  return store.listInvites({ libraryName, actorToken: token });
+}
+
 function readShareManifest(store, libraryName, shareName, token) {
   store.assertPermission(libraryName, token, "read");
   const sharesDir = path.join(store.libraryDir(libraryName), "shares");
@@ -249,6 +253,10 @@ function handleLibraryRoute({ request, response, store, url, token, libraryName,
       const invite = store.createInvite({ libraryName, actorToken: token, role: body.role });
       sendJson(response, 200, invite);
     });
+  }
+
+  if (request.method === "GET" && rest === "invites") {
+    return sendJson(response, 200, listInvites(store, libraryName, token));
   }
 
   if (request.method === "GET" && rest === "shares") {

@@ -18,6 +18,9 @@ const els = {
   detail: document.querySelector("#detail"),
   sync: document.querySelector("#sync"),
   members: document.querySelector("#members"),
+  invites: document.querySelector("#invites"),
+  inviteRole: document.querySelector("#invite-role"),
+  inviteCreate: document.querySelector("#invite-create"),
   reindex: document.querySelector("#reindex"),
   routeForm: document.querySelector("#route-form"),
   query: document.querySelector("#query"),
@@ -223,9 +226,12 @@ function renderManifest(manifest) {
       ])}
     </div>
     <h4>Share indexes</h4>
-    ${indexHost.outerHTML}
+    <div class="button-list inline" data-share-indexes></div>
     ${groups || "<p>No manifest entries.</p>"}
   `);
+
+  const shareIndexHost = els.detail.querySelector("[data-share-indexes]");
+  if (shareIndexHost) shareIndexHost.append(...indexHost.childNodes);
 
   for (const button of els.detail.querySelectorAll("[data-read]")) {
     button.addEventListener("click", () => readFile(button.getAttribute("data-read")));
@@ -238,6 +244,9 @@ async function refreshLibraries() {
   state.selectedShare = null;
   els.sync.disabled = true;
   els.members.disabled = true;
+  els.invites.disabled = true;
+  els.inviteRole.disabled = true;
+  els.inviteCreate.disabled = true;
   els.reindex.disabled = true;
   displayStatus("Loading libraries...");
   try {
@@ -260,6 +269,9 @@ async function selectLibrary(name) {
   els.selectedTitle.textContent = name;
   els.sync.disabled = false;
   els.members.disabled = false;
+  els.invites.disabled = false;
+  els.inviteRole.disabled = false;
+  els.inviteCreate.disabled = false;
   els.reindex.disabled = false;
   displayStatus(`Loading ${name}...`);
   try {
@@ -340,6 +352,45 @@ async function showMembers() {
   }
 }
 
+async function showInvites() {
+  if (!state.selectedLibrary) return;
+  displayStatus("Loading invites...");
+  try {
+    const data = await requestJson(`/api/libraries/${encodeURIComponent(state.selectedLibrary)}/invites`);
+    const invites = (data.invites || []).map(invite => ({
+      token: invite.token,
+      role: invite.role,
+      createdBy: invite.createdBy,
+      createdAt: invite.createdAt,
+      revoked: invite.revoked,
+      consumedBy: invite.consumedBy,
+      consumedAt: invite.consumedAt
+    }));
+    renderJson("Invites", { invites });
+    displayStatus(`${invites.length} invites visible.`);
+  } catch (error) {
+    setDetail("Invites", `<p>${escapeHtml(error.message)}</p>`);
+    displayStatus(error.message);
+  }
+}
+
+async function createInvite() {
+  if (!state.selectedLibrary) return;
+  const role = els.inviteRole.value;
+  displayStatus(`Creating ${role} invite...`);
+  try {
+    const invite = await requestJson(`/api/libraries/${encodeURIComponent(state.selectedLibrary)}/invites`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ role })
+    });
+    renderJson("Created invite", invite);
+    displayStatus(`Invite created for ${invite.role}.`);
+  } catch (error) {
+    displayStatus(error.message);
+  }
+}
+
 async function reindexLibrary() {
   if (!state.selectedLibrary) return;
   displayStatus("Reindexing...");
@@ -388,5 +439,7 @@ els.token.addEventListener("keydown", event => {
 });
 els.sync.addEventListener("click", readSyncSnapshot);
 els.members.addEventListener("click", showMembers);
+els.invites.addEventListener("click", showInvites);
+els.inviteCreate.addEventListener("click", createInvite);
 els.reindex.addEventListener("click", reindexLibrary);
 els.routeForm.addEventListener("submit", routeQuery);
