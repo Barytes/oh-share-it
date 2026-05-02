@@ -55,10 +55,26 @@ test("reindexLibrary writes share-level and library-level indexes", () => {
   reindexLibrary({ store, libraryName: "acme-product", actorToken: owner.token });
 
   const libraryDir = path.join(root, "data", "libraries", "acme-product");
-  const l0 = fs.readFileSync(path.join(libraryDir, "indexes", "L0.md"), "utf8");
-  const l2 = JSON.parse(fs.readFileSync(path.join(libraryDir, "indexes", "L2.json"), "utf8"));
-  assert.match(l0, /acme-product/);
-  assert.match(l0, /alice-api-notes/);
-  assert.equal(l2.entries.length, 3);
-  assert.equal(l2.entries.some(entry => entry.type === "skill"), true);
+  const shareIndexesDir = path.join(libraryDir, "shares", "alice-api-notes", "indexes");
+  const shareL0Path = path.join(shareIndexesDir, "L0.md");
+  const shareL1Path = path.join(shareIndexesDir, "L1.md");
+  const shareL2Path = path.join(shareIndexesDir, "L2.json");
+  assert.equal(fs.existsSync(shareL0Path), true);
+  assert.equal(fs.existsSync(shareL1Path), true);
+  assert.equal(fs.existsSync(shareL2Path), true);
+
+  const shareL0 = fs.readFileSync(shareL0Path, "utf8");
+  const shareL1 = fs.readFileSync(shareL1Path, "utf8");
+  const shareL2 = JSON.parse(fs.readFileSync(shareL2Path, "utf8"));
+  assert.match(shareL0, /alice-api-notes/);
+  assert.match(shareL1, /oh:\/\/library\/acme-product\/shares\/alice-api-notes/);
+  assert.equal(shareL2.entries.length, 3);
+  assert.equal(shareL2.entries.some(entry => entry.type === "memory"), true);
+
+  const libraryL0 = fs.readFileSync(path.join(libraryDir, "indexes", "L0.md"), "utf8");
+  const libraryL2 = JSON.parse(fs.readFileSync(path.join(libraryDir, "indexes", "L2.json"), "utf8"));
+  assert.match(libraryL0, /acme-product/);
+  assert.match(libraryL0, /alice-api-notes/);
+  assert.equal(libraryL2.entries.length, 3);
+  assert.equal(libraryL2.entries.some(entry => entry.type === "skill"), true);
 });
