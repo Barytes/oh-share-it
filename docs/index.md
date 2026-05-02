@@ -5,7 +5,7 @@
 ## 推荐阅读顺序
 
 1. [产品定义与核心信念](belief.md)
-2. [MVP OKR](mvp-okr.md)
+2. [MVP Objectives](mvp-okr.md)
 3. [产品决策记录](decisions.md)
 4. [架构草稿](architectue.md)
 
@@ -21,7 +21,7 @@
 
 ### MVP 与验证
 
-- [MVP OKR](mvp-okr.md)
+- [MVP Objectives](mvp-okr.md)
 
 这份文档回答：第一版产品要验证什么，用户具体能做什么，系统必须跑通哪条最小闭环。
 
@@ -41,12 +41,20 @@
 - [D-004：冲突观点是高价值 context，不应被默认合并](decisions/004-tension-as-context.md)
 - [D-005：公共层更像路由层和治理层，而不是单一真相层](decisions/005-public-layer-as-routing-and-governance.md)
 - [D-006：默认 routing，允许局部、可追溯、可撤销的 merge](decisions/006-hybrid-routing-and-merge.md)
+- [D-007：oh-share-it 是 external context provider，而不是 agent runtime](decisions/007-external-context-provider-not-agent-runtime.md)
 
 ### 架构
 
 - [架构草稿](architectue.md)
+- [File-based MVP Core Functions](file-based-core-functions.md)
 
 这份文档用于承载未来的系统结构、数据模型、agent-facing tools、routing 策略和 merge 机制。
+
+### References
+
+- [OpenViking 的 Context 抽象](references/openviking-context-abstraction.md)
+
+这类文档记录外部项目的设计参考，用于帮助 `oh-share-it` 做架构取舍，而不是直接作为产品定义。
 
 ## 当前核心判断
 
@@ -57,4 +65,5 @@
 - 稳定、低争议、可追溯的 user-agnostic knowledge 可以 merge 成公共层。
 - 用户提问时，系统能路由到有用的公共知识或 user-specific knowledge。
 - 主流 coding agent 可以通过稳定接口调用 context 能力。
+- `oh-share-it` 不接管 agent runtime，只提供外置知识层。
 - routing 策略能从使用反馈中自我改进。

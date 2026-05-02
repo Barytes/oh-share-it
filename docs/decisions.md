@@ -12,6 +12,7 @@
 | D-004 | 冲突观点是高价值 context，不应被默认合并 | 已采纳 | 2026-05-01 | [查看详情](decisions/004-tension-as-context.md) |
 | D-005 | 公共层更像路由层和治理层，而不是单一真相层 | 已采纳 | 2026-05-01 | [查看详情](decisions/005-public-layer-as-routing-and-governance.md) |
 | D-006 | 默认 routing，允许局部、可追溯、可撤销的 merge | 已采纳 | 2026-05-01 | [查看详情](decisions/006-hybrid-routing-and-merge.md) |
+| D-007 | oh-share-it 是 external context provider，而不是 agent runtime | 已采纳 | 2026-05-02 | [查看详情](decisions/007-external-context-provider-not-agent-runtime.md) |
 
 ## 当前主线判断
 
@@ -22,3 +23,5 @@
 **默认保留独立 context，用 routing 解决调用问题；当内容足够稳定、低争议、可验证、可追溯时，再允许局部 merge 成公共入口、共识页或项目记忆。**
 
 这意味着产品的核心不是强行复用，也不是制造一个统一大脑，而是在个人、项目、团队和公共层之间建立可控的 context routing 与有限 merge 机制。
+
+同时，`oh-share-it` 不应该接管 coding agent 在用户 working directory 中的行为。它的产品边界是给现有 agent 提供一个可治理、可追溯、可分享的外置知识层。
