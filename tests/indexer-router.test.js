@@ -148,3 +148,33 @@ test("writeShare rejects ambiguous share file paths", () => {
     );
   }
 });
+
+test("writeShare rejects duplicate share file paths after normalization", () => {
+  const root = makeTempDir();
+  const store = createStore({ dataDir: path.join(root, "data") });
+  const owner = store.createLibrary({ name: "acme-product", owner: "alice" });
+
+  for (const [index, paths] of [
+    ["docs/a.md", "docs\\a.md"],
+    ["docs/a.md", "docs/a.md"]
+  ].entries()) {
+    assert.throws(
+      () => writeShare({
+        store,
+        libraryName: "acme-product",
+        actorToken: owner.token,
+        sharePackage: {
+          ...samplePackage(),
+          shareName: `duplicate-${index}`,
+          files: paths.map((filePath, fileIndex) => ({
+            path: filePath,
+            hash: `h${fileIndex}`,
+            size: 3,
+            contentBase64: Buffer.from(`dupe-${fileIndex}`).toString("base64")
+          }))
+        }
+      }),
+      /Duplicate share file path/
+    );
+  }
+});

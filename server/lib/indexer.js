@@ -56,6 +56,13 @@ function writeShare({ store, libraryName, actorToken, sharePackage }) {
     file,
     sourcePath: validateShareFilePath(file.path)
   }));
+  const sourcePaths = new Set();
+  for (const { sourcePath } of files) {
+    if (sourcePaths.has(sourcePath)) {
+      throw new Error(`Duplicate share file path: ${sourcePath}`);
+    }
+    sourcePaths.add(sourcePath);
+  }
 
   const libraryDir = store.libraryDir(libraryName);
   const sharesDir = path.join(libraryDir, "shares");
