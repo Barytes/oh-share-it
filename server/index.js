@@ -8,6 +8,7 @@ const { routeQuery } = require("./lib/router");
 const { readJsonRequest, sendError, sendJson, serveStatic, staticContentType } = require("./lib/http-utils");
 const { normalizeRelativePath, readJsonFile, safeJoin, walkFiles } = require("./lib/fs-utils");
 
+const INDEX_PATHS = ["indexes/L0.md", "indexes/L1.md", "indexes/L2.json"];
 const SENSITIVE_LIBRARY_PATH_ROOTS = new Set([
   "members.json",
   "invites.json",
@@ -66,6 +67,50 @@ function isSyncableLibraryPath(relativePath) {
   return !isSensitiveLibraryPath(relativePath);
 }
 
+function indexMetadata(rootDir, relativePath) {
+  const filePath = safeJoin(rootDir, relativePath);
+  if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) return null;
+
+  const stat = fs.statSync(filePath);
+  return {
+    path: relativePath,
+    size: stat.size,
+    updatedAt: stat.mtime.toISOString()
+  };
+}
+
+function listIndexMetadata(rootDir) {
+  return INDEX_PATHS.map(relativePath => indexMetadata(rootDir, relativePath)).filter(Boolean);
+}
+
+function validateReadableLibraryPath(requestedPath) {
+  if (typeof requestedPath !== "string" || requestedPath === "") {
+    throw new Error("Missing file path");
+  }
+
+  if (
+    path.posix.isAbsolute(requestedPath.replaceAll("\\", "/")) ||
+    path.win32.isAbsolute(requestedPath)
+  ) {
+    throw new HttpError(403, "File is not readable");
+  }
+
+  const normalized = normalizeRelativePath(requestedPath);
+  const segments = normalized.split("/");
+  if (
+    normalized === "" ||
+    segments.some(segment => segment === "" || segment === "." || segment === "..")
+  ) {
+    throw new HttpError(403, "File is not readable");
+  }
+
+  return normalized;
+}
+
+function canonicalRelativePath(rootDir, filePath) {
+  return path.relative(path.resolve(rootDir), filePath).replaceAll("\\", "/");
+}
+
 function snapshotLibrary(store, libraryName, token) {
   store.assertPermission(libraryName, token, "sync");
   const libraryDir = store.libraryDir(libraryName);
@@ -79,6 +124,43 @@ function snapshotLibrary(store, libraryName, token) {
   return { library: libraryName, files };
 }
 
+function libraryDetail(store, libraryName, token) {
+  const role = store.getMemberRole(libraryName, token);
+  if (!role) throw new Error("Permission denied for read");
+
+  const libraryDir = store.libraryDir(libraryName);
+  const metadata = readJsonFile(path.join(libraryDir, "library.json"), {
+    name: libraryName,
+    description: "",
+    createdAt: null
+  });
+
+  return {
+    ...metadata,
+    name: metadata.name || libraryName,
+    role,
+    indexes: listIndexMetadata(libraryDir)
+  };
+}
+
+function shareSummary(sharesDir, shareName) {
+  const shareDir = safeJoin(sharesDir, shareName);
+  const manifestPath = path.join(shareDir, "manifest.json");
+  const manifest = readJsonFile(manifestPath, null);
+  if (!manifest) return { name: shareName, shareName };
+
+  const entries = Array.isArray(manifest.entries) ? manifest.entries : [];
+  return {
+    name: shareName,
+    shareName: manifest.shareName || shareName,
+    member: manifest.member,
+    createdAt: manifest.createdAt,
+    uploadedAt: fs.statSync(manifestPath).mtime.toISOString(),
+    entryCount: entries.length,
+    fileCount: entries.length
+  };
+}
+
 function listShares(store, libraryName, token) {
   store.assertPermission(libraryName, token, "read");
   const sharesDir = path.join(store.libraryDir(libraryName), "shares");
@@ -87,7 +169,7 @@ function listShares(store, libraryName, token) {
   const shares = fs.readdirSync(sharesDir, { withFileTypes: true })
     .filter(entry => entry.isDirectory())
     .filter(entry => !entry.name.startsWith("."))
-    .map(entry => ({ name: entry.name }));
+    .map(entry => shareSummary(sharesDir, entry.name));
   return { shares };
 }
 
@@ -107,27 +189,31 @@ function listMembers(store, libraryName, token) {
 function readShareManifest(store, libraryName, shareName, token) {
   store.assertPermission(libraryName, token, "read");
   const sharesDir = path.join(store.libraryDir(libraryName), "shares");
-  const manifestPath = safeJoin(sharesDir, `${shareName}/manifest.json`);
+  const shareDir = safeJoin(sharesDir, shareName);
+  const manifestPath = path.join(shareDir, "manifest.json");
   if (!fs.existsSync(manifestPath)) {
     throw new HttpError(404, "Share not found");
   }
-  return JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  return { ...manifest, indexes: listIndexMetadata(shareDir) };
 }
 
 function readLibraryFile(store, libraryName, requestedPath, token) {
   store.assertPermission(libraryName, token, "read");
-  if (!requestedPath) throw new Error("Missing file path");
-  if (!isSyncableLibraryPath(requestedPath)) {
+  const libraryDir = store.libraryDir(libraryName);
+  const normalizedPath = validateReadableLibraryPath(requestedPath);
+  const filePath = safeJoin(libraryDir, normalizedPath);
+  const relativePath = canonicalRelativePath(libraryDir, filePath);
+  if (!isSyncableLibraryPath(relativePath)) {
     throw new HttpError(403, "File is not readable");
   }
 
-  const filePath = safeJoin(store.libraryDir(libraryName), requestedPath);
   if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
     throw new HttpError(404, "File not found");
   }
 
   return {
-    path: requestedPath,
+    path: relativePath,
     contentBase64: fs.readFileSync(filePath).toString("base64")
   };
 }
@@ -145,9 +231,7 @@ function serveClientFile({ clientDir, url, response }) {
 
 function handleLibraryRoute({ request, response, store, url, token, libraryName, rest }) {
   if (request.method === "GET" && rest === "") {
-    const role = store.getMemberRole(libraryName, token);
-    if (!role) throw new Error("Permission denied for read");
-    return sendJson(response, 200, { name: libraryName, role });
+    return sendJson(response, 200, libraryDetail(store, libraryName, token));
   }
 
   if (request.method === "GET" && rest === "members") {

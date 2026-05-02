@@ -153,6 +153,183 @@ test("server allows direct reads of generated index files", async () => {
   });
 });
 
+test("server rejects dot-segment aliases to library metadata files", async () => {
+  await withServer(async baseUrl => {
+    const created = await createLibrary(baseUrl);
+    const reader = await createReader(baseUrl, created.token);
+    await uploadSampleShare(baseUrl, created.token);
+
+    const publicFile = await requestJson(
+      `${baseUrl}/api/libraries/acme-product/file?path=${encodeURIComponent("indexes/L0.md")}`,
+      { headers: { authorization: `Bearer ${reader.token}` } }
+    );
+    assert.equal(publicFile.response.status, 200);
+    assert.equal(typeof publicFile.json.contentBase64, "string");
+
+    for (const aliasPath of ["x/../members.json", "shares/foo/../../invites.json"]) {
+      const { response, json } = await requestJson(
+        `${baseUrl}/api/libraries/acme-product/file?path=${encodeURIComponent(aliasPath)}`,
+        { headers: { authorization: `Bearer ${reader.token}` } }
+      );
+
+      assert.notEqual(response.status, 200);
+      assert.equal(typeof json.error, "string");
+      assert.equal(Object.hasOwn(json, "contentBase64"), false);
+    }
+  });
+});
+
+test("server returns library metadata with generated index metadata", async () => {
+  await withServer(async baseUrl => {
+    const created = await createLibrary(baseUrl);
+    await uploadSampleShare(baseUrl, created.token);
+
+    const { response, json } = await requestJson(`${baseUrl}/api/libraries/acme-product`, {
+      headers: { authorization: `Bearer ${created.token}` }
+    });
+
+    assert.equal(response.status, 200);
+    assert.equal(json.name, "acme-product");
+    assert.equal(json.description, "");
+    assert.equal(typeof json.createdAt, "string");
+    assert.equal(json.role, "owner");
+    assert.deepEqual(
+      json.indexes.map(index => index.path).sort(),
+      ["indexes/L0.md", "indexes/L1.md", "indexes/L2.json"]
+    );
+    assert.equal(json.indexes.every(index => typeof index.size === "number" && index.size > 0), true);
+    assert.equal(json.indexes.some(index => Object.hasOwn(index, "contentBase64")), false);
+  });
+});
+
+test("server lists shares with manifest summary data", async () => {
+  await withServer(async baseUrl => {
+    const created = await createLibrary(baseUrl);
+    await uploadSampleShare(baseUrl, created.token);
+
+    const { response, json } = await requestJson(`${baseUrl}/api/libraries/acme-product/shares`, {
+      headers: { authorization: `Bearer ${created.token}` }
+    });
+
+    assert.equal(response.status, 200);
+    assert.equal(json.shares.length, 1);
+    assert.deepEqual(
+      {
+        name: json.shares[0].name,
+        shareName: json.shares[0].shareName,
+        member: json.shares[0].member,
+        createdAt: json.shares[0].createdAt,
+        entryCount: json.shares[0].entryCount,
+        fileCount: json.shares[0].fileCount
+      },
+      {
+        name: "alice-notes",
+        shareName: "alice-notes",
+        member: "alice",
+        createdAt: "2026-05-02T00:00:00.000Z",
+        entryCount: 1,
+        fileCount: 1
+      }
+    );
+    assert.equal(typeof json.shares[0].uploadedAt, "string");
+  });
+});
+
+test("server returns share manifest with share index metadata", async () => {
+  await withServer(async baseUrl => {
+    const created = await createLibrary(baseUrl);
+    await uploadSampleShare(baseUrl, created.token);
+
+    const { response, json } = await requestJson(`${baseUrl}/api/libraries/acme-product/shares/alice-notes`, {
+      headers: { authorization: `Bearer ${created.token}` }
+    });
+
+    assert.equal(response.status, 200);
+    assert.equal(json.shareName, "alice-notes");
+    assert.equal(json.member, "alice");
+    assert.equal(json.entries.length, 1);
+    assert.deepEqual(
+      json.indexes.map(index => index.path).sort(),
+      ["indexes/L0.md", "indexes/L1.md", "indexes/L2.json"]
+    );
+    assert.equal(json.indexes.some(index => Object.hasOwn(index, "contentBase64")), false);
+  });
+});
+
+test("server removes members through the members endpoint", async () => {
+  await withServer(async baseUrl => {
+    const created = await createLibrary(baseUrl);
+    const reader = await createReader(baseUrl, created.token);
+
+    const removed = await requestJson(`${baseUrl}/api/libraries/acme-product/members/bob`, {
+      method: "DELETE",
+      headers: { authorization: `Bearer ${created.token}` }
+    });
+    assert.equal(removed.response.status, 200);
+    assert.equal(removed.json.ok, true);
+
+    const listed = await requestJson(`${baseUrl}/api/libraries/acme-product/members`, {
+      headers: { authorization: `Bearer ${created.token}` }
+    });
+    assert.deepEqual(listed.json.members.map(member => member.member), ["alice"]);
+
+    const rejected = await requestJson(`${baseUrl}/api/libraries/acme-product`, {
+      headers: { authorization: `Bearer ${reader.token}` }
+    });
+    assert.equal(rejected.response.status, 403);
+  });
+});
+
+test("server reindex endpoint regenerates missing library indexes", async () => {
+  await withServer(async (baseUrl, root) => {
+    const created = await createLibrary(baseUrl);
+    await uploadSampleShare(baseUrl, created.token);
+    fs.rmSync(path.join(root, "data", "libraries", "acme-product", "indexes"), {
+      force: true,
+      recursive: true
+    });
+
+    const reindexed = await requestJson(`${baseUrl}/api/libraries/acme-product/reindex`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${created.token}` }
+    });
+    assert.equal(reindexed.response.status, 200);
+    assert.equal(reindexed.json.ok, true);
+
+    const detail = await requestJson(`${baseUrl}/api/libraries/acme-product`, {
+      headers: { authorization: `Bearer ${created.token}` }
+    });
+    assert.deepEqual(
+      detail.json.indexes.map(index => index.path).sort(),
+      ["indexes/L0.md", "indexes/L1.md", "indexes/L2.json"]
+    );
+  });
+});
+
+test("server serves static client files from the configured client directory", async () => {
+  const root = makeTempDir();
+  const clientDir = path.join(root, "client");
+  fs.mkdirSync(clientDir, { recursive: true });
+  fs.writeFileSync(path.join(clientDir, "index.html"), "<main>Share-It</main>");
+  fs.writeFileSync(path.join(clientDir, "app.js"), "globalThis.loaded = true;");
+
+  const server = createServer({ dataDir: path.join(root, "data"), clientDir });
+  await new Promise(resolve => server.listen(0, resolve));
+  const baseUrl = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const index = await fetch(`${baseUrl}/`);
+    assert.equal(index.status, 200);
+    assert.match(await index.text(), /Share-It/);
+
+    const app = await fetch(`${baseUrl}/app.js`);
+    assert.equal(app.status, 200);
+    assert.match(app.headers.get("content-type"), /text\/javascript/);
+    assert.match(await app.text(), /loaded/);
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
+});
+
 test("server sync excludes sensitive library paths", async () => {
   await withServer(async (baseUrl, root) => {
     const created = await createLibrary(baseUrl);
