@@ -269,7 +269,8 @@ upload, listing, sync, index regeneration, and optional routing.
 - `GET /api/libraries`
   Lists libraries the caller can access.
 - `POST /api/libraries`
-  Creates a library and makes the caller its owner.
+  Creates a library and makes the caller its owner. Local demo mode can allow
+  open creation; exposed servers should require a bootstrap admin token.
 - `GET /api/libraries/:libraryName`
   Returns library metadata, member role, and index metadata.
 - `GET /api/libraries/:libraryName/members`
@@ -288,10 +289,11 @@ upload, listing, sync, index regeneration, and optional routing.
   Reads an indexed file or raw file from a library.
 - `POST /api/libraries/:libraryName/shares`
   Accepts a share package and writes it to
-  `data/libraries/<libraryName>/shares/<shareName>/`.
+  `data/libraries/<libraryName>/shares/<shareName>/`. The server derives the
+  uploader from the bearer token and recomputes file hashes and sizes.
 - `POST /api/libraries/:libraryName/reindex`
   Regenerates Resource/Memory/Skill classification and L0/L1/L2 indexes for the
-  library.
+  library, including share-level classified folders and indexes.
 - `GET /api/libraries/:libraryName/sync`
   Returns a complete authorized library snapshot for local sync.
 - `POST /api/route`
@@ -334,6 +336,15 @@ hashes, sizes, classification, upload time, and generated index paths.
 
 Library-level indexes combine the visible shares inside the library. They are
 the first synced files the agent reads.
+
+### Runtime Posture
+
+The bundled Node server binds to `127.0.0.1` by default. Operators who bind to a
+non-loopback host must set `OH_SHARE_IT_ADMIN_TOKEN`; that token gates
+`POST /api/libraries` so arbitrary network callers cannot create public
+libraries. Share upload size is configurable with
+`OH_SHARE_IT_UPLOAD_LIMIT_BYTES`; the default is larger than the generic JSON
+limit so normal context packages are not rejected as oversized metadata calls.
 
 ## Classification
 

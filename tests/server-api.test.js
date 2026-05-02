@@ -117,6 +117,37 @@ test("server upload, sync, and route flow works", async () => {
   });
 });
 
+test("server accepts share uploads larger than the generic JSON limit", async () => {
+  await withServer(async baseUrl => {
+    const created = await createLibrary(baseUrl);
+    const largeContents = Buffer.alloc(1024 * 1024 + 16, "x");
+    const { response, json } = await requestJson(`${baseUrl}/api/libraries/acme-product/shares`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${created.token}`
+      },
+      body: JSON.stringify({
+        shareName: "large-context",
+        member: "spoofed",
+        createdAt: "2000-01-01T00:00:00.000Z",
+        files: [
+          {
+            path: "large.md",
+            hash: "fake",
+            size: 1,
+            contentBase64: largeContents.toString("base64")
+          }
+        ]
+      })
+    });
+
+    assert.equal(response.status, 200);
+    assert.equal(json.entries.length, 1);
+    assert.equal(json.entries[0].size, largeContents.length);
+  });
+});
+
 test("server rejects direct reads of library metadata files", async () => {
   await withServer(async baseUrl => {
     const created = await createLibrary(baseUrl);
@@ -213,24 +244,13 @@ test("server lists shares with manifest summary data", async () => {
 
     assert.equal(response.status, 200);
     assert.equal(json.shares.length, 1);
-    assert.deepEqual(
-      {
-        name: json.shares[0].name,
-        shareName: json.shares[0].shareName,
-        member: json.shares[0].member,
-        createdAt: json.shares[0].createdAt,
-        entryCount: json.shares[0].entryCount,
-        fileCount: json.shares[0].fileCount
-      },
-      {
-        name: "alice-notes",
-        shareName: "alice-notes",
-        member: "alice",
-        createdAt: "2026-05-02T00:00:00.000Z",
-        entryCount: 1,
-        fileCount: 1
-      }
-    );
+    assert.equal(json.shares[0].name, "alice-notes");
+    assert.equal(json.shares[0].shareName, "alice-notes");
+    assert.equal(json.shares[0].member, "alice");
+    assert.equal(typeof json.shares[0].createdAt, "string");
+    assert.equal(json.shares[0].createdAt === "2026-05-02T00:00:00.000Z", false);
+    assert.equal(json.shares[0].entryCount, 1);
+    assert.equal(json.shares[0].fileCount, 1);
     assert.equal(typeof json.shares[0].uploadedAt, "string");
   });
 });
@@ -468,4 +488,32 @@ test("server does not expose raw parser or decoder error messages", async () => 
     assert.equal(malformedPath.response.status, 400);
     assert.deepEqual(malformedPath.json, { error: "Bad request" });
   });
+});
+
+test("server can require an admin token for library creation", async () => {
+  const root = makeTempDir();
+  const server = createServer({ dataDir: `${root}/data`, adminToken: "bootstrap-secret" });
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  const baseUrl = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const denied = await requestJson(`${baseUrl}/api/libraries`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "locked", owner: "alice" })
+    });
+    assert.equal(denied.response.status, 403);
+
+    const created = await requestJson(`${baseUrl}/api/libraries`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: "Bearer bootstrap-secret"
+      },
+      body: JSON.stringify({ name: "locked", owner: "alice" })
+    });
+    assert.equal(created.response.status, 200);
+    assert.equal(created.json.library, "locked");
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
 });

@@ -103,6 +103,10 @@ function trimServer(server) {
   return requireValue(server, "Missing --server").replace(/\/+$/, "");
 }
 
+function optionalAdminToken(args) {
+  return flag(args, "--admin-token", process.env.OH_SHARE_IT_ADMIN_TOKEN || null);
+}
+
 async function requestJson(url, { method = "GET", token = null, body = null } = {}) {
   let response;
   try {
@@ -168,9 +172,9 @@ function resolveLibraryContext(args) {
 
 function resolveReadPath(requested) {
   if (!requested.startsWith("oh://")) return requested;
-  const match = /\/shares\/(.+)$/.exec(requested);
+  const match = /^oh:\/\/library\/[^/]+\/(.+)$/.exec(requested);
   if (!match) throw new Error(`Unsupported oh:// URI: ${requested}`);
-  return `shares/${match[1]}`;
+  return match[1];
 }
 
 function createStarterRules(root) {
@@ -186,6 +190,7 @@ async function createLibrary(args) {
   const member = requireValue(flag(args, "--member"), "Missing --member");
   const created = await requestJson(`${server}/api/libraries`, {
     method: "POST",
+    token: optionalAdminToken(args),
     body: { name, owner: member }
   });
   saveCredential({ server, library: created.library, member: created.member, token: created.token });

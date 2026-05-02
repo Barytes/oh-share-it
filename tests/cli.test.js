@@ -91,6 +91,7 @@ test("CLI can create, bind, share, sync, read, list, and query", async () => {
     const synced = JSON.parse(await runCli(["sync"], workdir, { HOME: home }));
     const listed = JSON.parse(await runCli(["list"], workdir, { HOME: home }));
     const l0 = runCliSync(["read", "indexes/L0.md"], workdir, { HOME: home });
+    const l0ByUri = runCliSync(["read", "oh://library/acme-product/indexes/L0.md"], workdir, { HOME: home });
     const query = JSON.parse(await runCli(["query", "agent skill"], workdir, { HOME: home }));
 
     assert.equal(created.library, "acme-product");
@@ -100,6 +101,7 @@ test("CLI can create, bind, share, sync, read, list, and query", async () => {
     assert.equal(fs.existsSync(path.join(workdir, ".oh-share-it", "public", "acme-product", "shares", "alice-notes", "raw", "README.md")), true);
     assert.deepEqual(listed.shares.map(share => share.name), ["alice-notes"]);
     assert.match(l0, /acme-product/);
+    assert.equal(l0ByUri, l0);
     assert.equal(query.results.length > 0, true);
 
     const binding = readJson(path.join(workdir, ".oh-share-it", "binding.json"));

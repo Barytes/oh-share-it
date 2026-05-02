@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { makeTempDir } = require("./helpers/tmp");
 const { createStore } = require("../server/lib/library-store");
+const { sha256 } = require("../server/lib/fs-utils");
 const { writeShare, reindexLibrary } = require("../server/lib/indexer");
 
 function samplePackage() {
@@ -77,6 +78,70 @@ test("reindexLibrary writes share-level and library-level indexes", () => {
   assert.match(libraryL0, /alice-api-notes/);
   assert.equal(libraryL2.entries.length, 3);
   assert.equal(libraryL2.entries.some(entry => entry.type === "skill"), true);
+});
+
+test("writeShare derives uploader and file integrity from server state", () => {
+  const root = makeTempDir();
+  const store = createStore({ dataDir: path.join(root, "data") });
+  const owner = store.createLibrary({ name: "acme-product", owner: "alice" });
+  const invite = store.createInvite({
+    libraryName: "acme-product",
+    actorToken: owner.token,
+    role: "contributor"
+  });
+  const contributor = store.joinInvite({ token: invite.token, member: "bob" });
+  const contents = Buffer.from("trusted bytes");
+
+  writeShare({
+    store,
+    libraryName: "acme-product",
+    actorToken: contributor.token,
+    sharePackage: {
+      shareName: "spoof-attempt",
+      member: "mallory",
+      createdAt: "2000-01-01T00:00:00.000Z",
+      files: [
+        {
+          path: "README.md",
+          hash: "fake-hash",
+          size: 999999,
+          contentBase64: contents.toString("base64")
+        }
+      ]
+    }
+  });
+
+  const manifest = JSON.parse(fs.readFileSync(
+    path.join(root, "data", "libraries", "acme-product", "shares", "spoof-attempt", "manifest.json"),
+    "utf8"
+  ));
+  assert.equal(manifest.member, "bob");
+  assert.notEqual(manifest.createdAt, "2000-01-01T00:00:00.000Z");
+  assert.equal(manifest.entries[0].hash, sha256(contents));
+  assert.equal(manifest.entries[0].size, contents.length);
+  assert.equal(manifest.entries[0].updatedAt, manifest.createdAt);
+});
+
+test("reindexLibrary rebuilds missing share-level indexes and classified files", () => {
+  const root = makeTempDir();
+  const store = createStore({ dataDir: path.join(root, "data") });
+  const owner = store.createLibrary({ name: "acme-product", owner: "alice" });
+  writeShare({ store, libraryName: "acme-product", actorToken: owner.token, sharePackage: samplePackage() });
+
+  const shareDir = path.join(root, "data", "libraries", "acme-product", "shares", "alice-api-notes");
+  fs.rmSync(path.join(shareDir, "indexes"), { recursive: true, force: true });
+  fs.rmSync(path.join(shareDir, "resources"), { recursive: true, force: true });
+  fs.rmSync(path.join(shareDir, "skills"), { recursive: true, force: true });
+  fs.rmSync(path.join(shareDir, "memories"), { recursive: true, force: true });
+
+  reindexLibrary({ store, libraryName: "acme-product", actorToken: owner.token });
+
+  assert.equal(fs.existsSync(path.join(shareDir, "indexes", "L0.md")), true);
+  assert.equal(fs.existsSync(path.join(shareDir, "indexes", "L1.md")), true);
+  assert.equal(fs.existsSync(path.join(shareDir, "indexes", "L2.json")), true);
+  assert.equal(fs.existsSync(path.join(shareDir, "resources", "README.md")), true);
+  assert.equal(fs.existsSync(path.join(shareDir, "skills", ".codex", "skills", "context", "SKILL.md")), true);
+  assert.equal(fs.existsSync(path.join(shareDir, "memories", "notes", "2026-05-02-handoff.md")), true);
 });
 
 test("writeShare preserves existing share and library index when replacement has invalid path", () => {

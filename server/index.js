@@ -16,6 +16,7 @@ const SENSITIVE_LIBRARY_PATH_ROOTS = new Set([
   ".internal",
   "secrets"
 ]);
+const DEFAULT_SHARE_UPLOAD_LIMIT_BYTES = 25 * 1024 * 1024;
 
 class HttpError extends Error {
   constructor(statusCode, message) {
@@ -36,6 +37,15 @@ function requireToken(request) {
   const token = requestToken(request);
   if (!token) throw new Error("Permission denied");
   return token;
+}
+
+function parsePositiveInteger(value, fallback) {
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function isLoopbackHost(host) {
+  return host === "127.0.0.1" || host === "localhost" || host === "::1";
 }
 
 function errorStatus(error) {
@@ -233,7 +243,7 @@ function serveClientFile({ clientDir, url, response }) {
   return true;
 }
 
-function handleLibraryRoute({ request, response, store, url, token, libraryName, rest }) {
+function handleLibraryRoute({ request, response, store, url, token, libraryName, rest, shareUploadLimitBytes }) {
   if (request.method === "GET" && rest === "") {
     return sendJson(response, 200, libraryDetail(store, libraryName, token));
   }
@@ -274,7 +284,7 @@ function handleLibraryRoute({ request, response, store, url, token, libraryName,
   }
 
   if (request.method === "POST" && rest === "shares") {
-    return readJsonRequest(request).then(body => {
+    return readJsonRequest(request, { maxBytes: shareUploadLimitBytes }).then(body => {
       const result = writeShare({ store, libraryName, actorToken: token, sharePackage: body });
       sendJson(response, 200, result);
     });
@@ -292,7 +302,7 @@ function handleLibraryRoute({ request, response, store, url, token, libraryName,
   return false;
 }
 
-async function handleApiRequest({ request, response, dataDir, store, url }) {
+async function handleApiRequest({ request, response, dataDir, store, url, adminToken, shareUploadLimitBytes }) {
   const token = requestToken(request);
 
   if (request.method === "GET" && url.pathname === "/api/health") {
@@ -300,6 +310,9 @@ async function handleApiRequest({ request, response, dataDir, store, url }) {
   }
 
   if (request.method === "POST" && url.pathname === "/api/libraries") {
+    if (adminToken && token !== adminToken) {
+      throw new HttpError(403, "Permission denied for library creation");
+    }
     const body = await readJsonRequest(request);
     return sendJson(response, 200, store.createLibrary({ name: body.name, owner: body.owner }));
   }
@@ -328,7 +341,8 @@ async function handleApiRequest({ request, response, dataDir, store, url }) {
       url,
       token,
       libraryName,
-      rest
+      rest,
+      shareUploadLimitBytes
     });
     if (handled !== false) return handled;
   }
@@ -350,7 +364,9 @@ async function handleApiRequest({ request, response, dataDir, store, url }) {
 
 function createServer({
   dataDir = path.join(process.cwd(), "data"),
-  clientDir = path.join(process.cwd(), "client")
+  clientDir = path.join(process.cwd(), "client"),
+  adminToken = "",
+  shareUploadLimitBytes = DEFAULT_SHARE_UPLOAD_LIMIT_BYTES
 } = {}) {
   const store = createStore({ dataDir });
 
@@ -359,7 +375,15 @@ function createServer({
       const url = new URL(request.url, "http://localhost");
 
       if (url.pathname === "/api" || url.pathname.startsWith("/api/")) {
-        return await handleApiRequest({ request, response, dataDir, store, url });
+        return await handleApiRequest({
+          request,
+          response,
+          dataDir,
+          store,
+          url,
+          adminToken,
+          shareUploadLimitBytes
+        });
       }
 
       if (serveClientFile({ clientDir, url, response })) return;
@@ -372,8 +396,18 @@ function createServer({
 
 if (require.main === module) {
   const port = Number(process.env.PORT || 4317);
-  createServer().listen(port, () => {
-    console.log(`oh-share-it server listening on http://localhost:${port}`);
+  const host = process.env.HOST || "127.0.0.1";
+  const adminToken = process.env.OH_SHARE_IT_ADMIN_TOKEN || "";
+  if (!adminToken && !isLoopbackHost(host)) {
+    console.error("Refusing to bind outside localhost without OH_SHARE_IT_ADMIN_TOKEN.");
+    process.exit(1);
+  }
+  const shareUploadLimitBytes = parsePositiveInteger(
+    process.env.OH_SHARE_IT_UPLOAD_LIMIT_BYTES,
+    DEFAULT_SHARE_UPLOAD_LIMIT_BYTES
+  );
+  createServer({ adminToken, shareUploadLimitBytes }).listen(port, host, () => {
+    console.log(`oh-share-it server listening on http://${host}:${port}`);
   });
 }
 
