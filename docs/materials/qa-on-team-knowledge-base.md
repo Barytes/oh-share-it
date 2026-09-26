@@ -27,3 +27,42 @@ hi，我最近遇到的场景有类似之处，希望我的思考能提供一些
 问题3：针对使用Agent的不同用户，如何设计使用aggregated user specific knowledge的策略？
 猜想：这个问题我也没想到解决方案。目前有些猜想：1）借鉴鸭哥的为什么AI只会说正确的废话，以及怎么把它逼出舒适区  ，从多个user的specific knowledge里提炼出patterns-axioms，然后用axioms来指导Agent的回答。但是这样又消灭掉了user specific knowledge中本身包含的多样性——例如可能分析师A的理解在场景A里超级有效，分析师B的理解在场景B里超级有效。2）设计一个动态路由机制，例如给每个人的specific knowledge设计一个权重，然后按照不同场景的提问动态调整权重。这里面又有很多设计的空间。最近了解到的想法是，可以把每个用户跟Agent交互的trace收集起来作为数据，这些trace就可以用来设计使用aggregated user specific knowledge的策略。
 总结：我的理解是 1）公共库-个人库的双层架构能低成本地收集个人的domain knowledge沉淀成团队资产，并将团队资产分发给个人；2）个人的domain knowledge如何沉淀成有效的团队资产，需要设计聚合机制；3）团队资产如何对个人有用，需要针对个人设计有效的使用策略。
+
+## 评论
+
+按时间排列。界面上的点赞、回复按钮已去掉。月见的评论在原帖里被折叠，下面只保留当时展开可见的文字。
+
+### Nana（Founding Member，4月26日）
+
+这篇好好，我一直在思考企业里的 context infrastructure 到底怎么做。我觉得在很多 AI practice，可能是要经过 bottom up，从分散的各个 individual practice 里慢慢找出共识的部分，然后再 top down，把共识再 distribute 下去。
+
+好的 technical leadership 应该是这样的，概念和实践的先驱者，同时也是 define 的人。
+
+有个问题是，这种扫描 semantics 上的 change，似乎是一个挺特殊和专职的需求，但是通用的 AI coding agent 这种活儿也干得很好，只是需要专门设计处理这类功能的 task，那么其实是由必要产品化么？
+
+**鸭哥（Yan Wang，Admin，4月27日）回复：**
+
+我自己用的就是一般的 AI coding agent。只要一些 skill/md 文件交代一下期待的成功标准就好了。
+
+**Nana（4月27日）回复：**
+
+谢谢鸭哥。
+
+### 月见（Founding Member，4月27日）
+
+太棒了，我现在就负责第一版 context infra 的搭建。真是太巧了。
+
+这篇文章给了我很多启发。后续这里的实践 run 一段时间后，也想写一篇实战总结分享到社区。
+
+**鸭哥（Yan Wang，Admin，4月27日）回复：**
+
+好棒！非常期待！
+
+### Zayn（Founding Member，5月5日）
+
+身份：感受 AI，开源 Context 数据库 OpenViking 核心成员。
+
+两个视角的启发和共振：
+
+1. 代码的多环境分支管理。之前我们为了维护一套代码在多环境中使用，通常会考虑把更改合入主干分支。有 AI 后不必再这样做。主干保留核心逻辑，特殊环境保留分支逻辑，主干更新后用 AI 完成 code rebase。
+2. multi-agent memory 的 dream/reference 也可以是一套体系。每个人有多个自己的 agent identity 和 learning。在 agent 之间出现高度重合的 mindset / procedure 时，用 AI 把 common layer / insight 抽出来复用。
